@@ -6,5 +6,7 @@ var scriptUpdater = {
     TWDCC: '0.0.1-beta-2',
     TWDCCNew: 'Update link added.',
     TWPT: '0.2.0',
-    TWPTNew: 'New features: Zoom map, disable premium notifications.'
+    TWPTNew: 'New features: Zoom map, disable premium notifications.',
+    TWPTExt: '0.2.0',
+    TWPTExtNew: 'Fixed Update Link.'
 };
