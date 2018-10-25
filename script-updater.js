@@ -7,6 +7,6 @@ var scriptUpdater = {
     TWDCCNew: 'Update link added.',
     TWPT: '0.3.0',
     TWPTNew: 'Added button to job windows which allows you to start 9x 15 second jobs with one click.',
-    TWPTExt: '0.2.0',
-    TWPTExtNew: 'Fixed Update Link.'
+    TWPTExt: '0.3.0',
+    TWPTExtNew: 'Added button to job windows which allows you to start 9x 15 second jobs with one click.'
 };
