@@ -5,8 +5,8 @@ var scriptUpdater = {
     TWCAONew: 'Added a dialog which asks whether you want to open the alliance chat or not.',
     TWDCC: '0.0.1-beta-2',
     TWDCCNew: 'Update link added.',
-    TWPT: '0.3.0',
-    TWPTNew: 'Added button to job windows which allows you to start 9x 15 second jobs with one click.',
-    TWPTExt: '0.3.2',
-    TWPTExtNew: 'Added chat improvements feature: show last online in player profile'
+    TWPT: '1.0.0',
+    TWPTNew: 'New feature: Hide "Drawing Map" flag.',
+    TWPTExt: '1.0.0',
+    TWPTExtNew: 'New feature: Hide "Drawing Map" flag.'
 };
