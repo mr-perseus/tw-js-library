@@ -7,6 +7,6 @@ var scriptUpdater = {
     TWDCCNew: 'Update link added.',
     TWPT: '1.0.1',
     TWPTNew: 'New feature: Chat improvements.',
-    TWPTExt: '1.0.0',
-    TWPTExtNew: 'New feature: Hide "Drawing Map" flag.'
+    TWPTExt: '99',
+    TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended".'
 };
