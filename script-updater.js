@@ -8,5 +8,7 @@ var scriptUpdater = {
     TWPT: '1.1.1',
     TWPTNew: 'Bugfix',
     TWPTExt: '99',
-    TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended".'
+    TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended".',
+    TWDIT: '0.1.0',
+    TWDITNew: 'Initial Version'    
 };
