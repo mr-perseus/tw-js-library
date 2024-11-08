@@ -9,6 +9,6 @@ var scriptUpdater = {
     TWPTNew: 'Improve CinemaSkipButton placement. Change timeout from 5 to 15 sec to comply with InnoGames rules.',
     TWPTExt: '99',
     TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended".',
-    TWDIT: '0.3.0',
-    TWDITNew: 'Silver / Gold Job highlighter'
+    TWDIT: '0.4.0',
+    TWDITNew: 'Multiple market buy.'
 };
