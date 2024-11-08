@@ -8,7 +8,7 @@ var scriptUpdater = {
     TWPT: '1.3.0',
     TWPTNew: 'Always show recruitment button in fort battle window. (Enable in settings first)',
     TWPTExt: '99',
-    TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended".',
+    TWPTExtNew: 'THIS SCRIPT IS DISCONTINUED! Please migrate to "The West Perseus Toolkit" and remove "The West Perseus Toolkit Extended"..',
     TWDIT: '0.4.0',
     TWDITNew: 'Multiple market buy.'
 };
