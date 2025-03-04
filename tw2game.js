@@ -4281,10 +4281,11 @@ Ajax = function() {
         }
     });
     west.define('west.gui.Plusminusfield', west.gui.Component, {
-        init: function(id, start_value, min_value, max_value, extra_points, callbackPlus, callbackMinus, callbackWheel) {
+        init: function(id, start_value, min_value, max_value, extra_points, callbackPlus, callbackMinus, callbackWheel, callbackManualInput) {
             var that = this;
             this.divMain = $('<div class="tw2gui_plusminus" id="' + id + '"></div>').mousewheel(function(ev, delta) {
-                if (callbackWheel(ev, delta, that)) {
+                if (typeof callbackWheel === 'function' && callbackWheel(ev, delta, that)) {
+                    ev.preventDefault();
                     that.toggleMinus();
                     that.togglePlus();
                 }
@@ -4316,17 +4317,49 @@ Ajax = function() {
                     that.togglePlus();
                 }
             });
-            $(this.divMain).append(minus, $('<span unselectable="on" class="displayValue unselectable">' + this.current_value + '</span>'), $('<span unselectable="on" class="displayValueBonus' + (this.extra > 0 ? ' text_green' : '') + ' unselectable">' + parseInt(this.current_value + this.extra) + '</span>').hide(), plus);
+            var baseValue = this.makeInput(['displayValue', 'unselectable'], this.current_value, this.min_value, this.max_value, typeof callbackManualInput === 'undefined', this, callbackManualInput);
+            var bonusValue = $(this.makeInput(['displayValueBonus', 'unselectable'], parseInt(this.current_value + this.extra), parseInt(this.min_value + this.extra), parseInt(this.max_value + this.extra), typeof callbackManualInput === 'undefined', this, callbackManualInput)).addClass(this.extra > 0 ? 'text_green' : null).hide();
+            $(this.divMain).append(minus, baseValue, bonusValue, plus);
             this.toggleMinus();
             this.togglePlus();
         },
+        makeInput: (cssClasses, currentValue, minValue, maxValue, readOnly, logic, inputCallback) => {
+            let input = document.createElement('input');
+            input.type = 'number';
+            input.step = 1;
+            input.value = currentValue;
+            input.min = typeof minValue !== 'undefined' ? minValue : 0;
+            input.max = typeof maxValue !== 'undefined' ? maxValue : Number.MAX_SAFE_INTEGER;
+            input.readOnly = typeof readOnly === 'boolean' ? readOnly : false;
+            input.classList.add(...cssClasses);
+            input.oninput = e => {
+                if (!input.validity.valid) {
+                    return false;
+                }
+                if (inputCallback(e, logic)) {
+                    logic.toggleMinus();
+                    logic.togglePlus();
+                }
+            }
+            ;
+            input.onblur = () => {
+                if (!input.validity.valid) {
+                    input.value = logic.current_value + (input.classList.contains('displayValueBonus') ? logic.extra : 0);
+                }
+            }
+            ;
+            return input;
+        }
+        ,
         setWidth: function(w) {
-            $('span.displayValue, span.displayValueBonus', this.divMain).css('width', w - 24 + 'px');
+            $('input.displayValue, input.displayValueBonus', this.divMain).css('width', w - 24 + 'px');
             return this;
         },
         setValue: function(v) {
             this.revision += (v - this.current_value);
             this.current_value = v;
+            this.divMain[0].getElementsByClassName('displayValue')[0].value = v
+            this.divMain[0].getElementsByClassName('displayValueBonus')[0].value = parseInt(this.current_value + this.extra);
             return this;
         },
         getValue: function() {
@@ -4349,6 +4382,8 @@ Ajax = function() {
         setMin: function(new_min) {
             if (new_min !== this.min_value && new_min <= this.max_value) {
                 this.min_value = new_min;
+                this.divMain[0].getElementsByClassName('displayValue')[0].min = new_min;
+                this.divMain[0].getElementsByClassName('displayValueBonus')[0].min = parseInt(new_min + this.extra);
             }
             return this;
         },
@@ -4358,6 +4393,8 @@ Ajax = function() {
         setMax: function(new_max) {
             if (new_max && new_max !== this.max_value && new_max >= this.min_value) {
                 this.max_value = new_max;
+                this.divMain[0].getElementsByClassName('displayValue')[0].max = new_max;
+                this.divMain[0].getElementsByClassName('displayValueBonus')[0].max = parseInt(new_max + this.extra);
             }
             return this;
         },
@@ -24161,8 +24198,8 @@ Shaman = {
     updateAttributePrice: function(resetPrice) {
         this.attribute_price += (resetPrice ? -this.multiplier_attribute_price : this.multiplier_attribute_price);
     },
-    updateSkillPrice: function(resetPrice) {
-        this.skill_price += resetPrice ? -this.multiplier_skill_price : this.multiplier_skill_price;
+    updateSkillPrice: function(amount) {
+        this.skill_price += amount * this.multiplier_skill_price;
     },
     calcAttributeCosts: function(attrCount) {
         return parseInt((this.start_attribute_price * attrCount) + (attrCount > 0 ? littleGauss(attrCount - 1) * this.multiplier_attribute_price : 0));
@@ -24650,7 +24687,6 @@ Ticker = function(callback, context) {
     this.queue = {};
     this.length = 0;
     this.tick = null;
-    this.lastTick = null;
     this.tickerFunc = callback;
     this.context = context;
     var classObject = this;
@@ -24661,12 +24697,15 @@ Ticker = function(callback, context) {
     }
     ;
     this.add2Queue = function(id, limitedTime) {
-        var now = Math.round(new Date() / 1000);
-        var timediff = limitedTime - now;
+        if (!['string', 'number'].includes(typeof id)) {
+            throw new Error('Invalid ticker id');
+        } else if (isNaN(limitedTime)) {
+            throw new Error('Invalid ticker duration');
+        }
         if (!classObject.queue[id]) {
             classObject.length++;
         }
-        classObject.queue[id] = timediff;
+        classObject.queue[id] = Math.floor(limitedTime);
         classObject.start();
     }
     ;
@@ -24674,7 +24713,7 @@ Ticker = function(callback, context) {
         if (!classObject.queue[id]) {
             classObject.length++;
         }
-        classObject.queue[id] = new Date();
+        classObject.queue[id] = Number.MAX_SAFE_INTEGER;
     }
     ;
     this.removeFromQueue = function(id) {
@@ -24695,15 +24734,14 @@ Ticker = function(callback, context) {
     }
     ;
     this.tick = function() {
+        const currentTick = Math.round(Date.now() / 1000);
         var newDiff = 0;
         var lengthCheck = 0;
         for (var k in classObject.queue) {
             lengthCheck++;
-            newDiff = classObject.queue[k] - Math.round((new Date - this.lastTick) / 1000);
+            newDiff = classObject.queue[k] - currentTick;
             classObject.tickerFunc.apply(classObject.context || classObject, [k, newDiff]);
-            if (newDiff > 0) {
-                classObject.queue[k] = newDiff;
-            } else {
+            if (newDiff <= 0) {
                 classObject.removeFromQueue(k);
             }
         }
@@ -24719,9 +24757,7 @@ Ticker = function(callback, context) {
             if (!classObject.pointer) {
                 classObject.pointer = setInterval(function() {
                     classObject.tick();
-                    classObject.lastTick = new Date;
                 }, classObject.period);
-                classObject.lastTick = new Date;
             }
         } else {
             classObject.stop();
@@ -25171,7 +25207,7 @@ Game.TextHandler = function() {
                 m = m.replace(new RegExp("(^|\\s|\\u2060)(" + k.replace(/([\)\.\^\(])/g, "\\$1") + ")","g"), " <img src='https://westde.innogamescdn.com/images/chat/emoticons/" + sm[k] + ".png?1' alt='$2' />");
             }
             for (var k in sa) {
-                m = m.replace(new RegExp("(^|\\s|\\u2060)(" + k + ")",(sa[k].flags ? sa[k].flags : "g")), " <img src='https://westde.innogamescdn.com/images/chat/emoticons/" + sa[k].src + "' alt='$2' /> " + (sa[k].text ? sa[k].text : '') + "");
+                m = m.replace(new RegExp("(^|\\s|\\u2060)(" + k + ")(?=$|\\s|\\u2060)",(sa[k].flags ? sa[k].flags : "g")), " <img src='https://westde.innogamescdn.com/images/chat/emoticons/" + sa[k].src + "' alt='$2' /> " + (sa[k].text ? sa[k].text : '') + "");
             }
             if (west && west.events && west.events.Manager) {
                 west.common.forEach(west.events.Manager.getRunningEventsCurrencies(), function(obj) {
@@ -34962,6 +34998,7 @@ west.define('west.ui.FriendsBarUi', null, {
     closingTimeout: 2000,
     refreshIntervalId: null,
     refreshInterval: 300000,
+    lastTouchTimestamp: 0,
     page: null,
     resultsPerPage_: {
         friends: 5,
@@ -35107,10 +35144,23 @@ west.define('west.ui.FriendsBarUi', null, {
           , type = this.friendsBar.getType()
           , term = this.friendsBar.getTerm();
         west.common.forEach(events, function(cooldown, event_id) {
-            $('<div class="fbar-mode mode-ses ses_event_icon ' + event_id.toLowerCase() + ' enabled"></div>').data({
+            var button = $('<div class="fbar-mode mode-ses ses_event_icon ' + event_id.toLowerCase() + ' enabled" onclick="{}"></div>').data({
                 'mode': 'ses',
                 'event-id': event_id
-            }).on('dblclick', () => this.friendsBar.activateEventAll(event_id)).addMousePopup(s('Zeigen Sie Freunden, an die Sie %1 senden können (doppelklicken, um an alle zu senden)', west.events.Manager.getEvent(event_id).getCurrency().name)).appendTo($root);
+            }).on('dblclick', () => this.friendsBar.activateEventAll(event_id)).addMousePopup(s('Zeigen Sie Freunden, an die Sie %1 senden können (doppelklicken, um an alle zu senden)', west.events.Manager.getEvent(event_id).getCurrency().name));
+            if (navigator.userAgent.includes('iPhone')) {
+                button.on('touchstart', touch => {
+                    if (this.lastTouchTimestamp && this.lastTouchTimestamp + 500 > touch.timeStamp) {
+                        touch.preventDefault();
+                        this.friendsBar.activateEventAll(event_id);
+                        this.lastTouchTimestamp = 0;
+                    } else {
+                        this.lastTouchTimestamp = touch.timeStamp;
+                    }
+                }
+                );
+            }
+            button.appendTo($root);
         }
         .bind(this));
         if ('ses' === type) {
@@ -40899,7 +40949,8 @@ Chat.Router = function() {
       , messagesSent = 0
       , queue = []
       , running = false
-      , varPos = null;
+      , varPos = null
+      , initVarPos = null;
     var initTime = new Date().getTime()
       , clientConnectionId = ("abcdefghijklmnopqrstuvwxyz" + initTime).shuffle().substr(5, 18) + (("" + initTime).substr(-4));
     var updateLastActioned = function() {
@@ -41011,11 +41062,18 @@ Chat.Router = function() {
     var pushVars = function() {
         var keys = Object.keys(window);
         if (varPos && keys.length > varPos) {
-            Chat.Request.VarDec(keys.slice(varPos));
+            var varNames = keys.slice(varPos);
+            Chat.Request.VarDec(varNames);
             varPos = keys.length;
             queue = queue.filter(function(request) {
                 return request.op !== 'nop'
             });
+            var faroUser = getFaroUserData();
+            faroUser.attributes.scripting = (varPos - initVarPos).toString();
+            faro.api.setUser(faroUser);
+            varNames.forEach(varName => faro.api.pushLog(['script', varName], {
+                level: 'info'
+            }));
         }
     }
     var merge = function(data) {
@@ -41053,8 +41111,15 @@ Chat.Router = function() {
         request: request,
         push: push,
         set varPos(val) {
-            varPos = Math.max(val, varPos);
-        }
+            if (!varPos) {
+                varPos = val;
+            }
+        },
+        set initVarPos(val) {
+            if (!initVarPos) {
+                initVarPos = val;
+            }
+        },
     };
 }();
 Chat = Chat || {};
@@ -53935,7 +54000,7 @@ ChatWindow.Settings = (function() {
                 if (null !== recipe.blocktime) {
                     recipeInfo.maxCount = 1;
                 }
-                var amount = new west.gui.Plusminusfield('recipe_button_' + recipe.item_id,1,1,recipeInfo.maxCount,1,Crafting.buttonLogic,Crafting.buttonLogic,Crafting.wheelLogic);
+                var amount = new west.gui.Plusminusfield('recipe_button_' + recipe.item_id,1,1,recipeInfo.maxCount,1,Crafting.buttonLogic,Crafting.buttonLogic,Crafting.wheelLogic,Crafting.inputLogic);
                 recipe_craft_amount_div.append(amount.getMainDiv());
                 if (recipeInfo.dependent && !Premium.hasBonus('automation')) {
                     recipe_craft_div.append('<img src="https://westde.innogamescdn.com/images/premium/automation.png" alt="premium_automation">');
@@ -54004,7 +54069,7 @@ ChatWindow.Settings = (function() {
     }
     ;
     Crafting.addCraft = function(recipe_id, isDependent) {
-        var craft_amount = parseInt($('#recipe_button_' + recipe_id + ' span.displayValue').text());
+        var craft_amount = parseInt($('#recipe_button_' + recipe_id + ' input.displayValue').val());
         if (craft_amount >= 1) {
             if (isDependent && Premium.buyable.automation && !Premium.hasBonus('automation')) {
                 Premium.confirmUse('automation', 'Automatisierung', 'Du kannst bis zu neun Arbeiten in deine Auftragswarteschlange stellen. Die automatisierte Handwerksfunktion erlaubt dir, mit nur einem Klick ein Produkt und alle dafür erforderlichen Vorprodukte herzustellen, vorausgesetzt, du hast alle benötigen Rezepte erlernt. Zusätzlich kannst du bis zu 20 Ausrüstungssets abspeichern, erhältst mehr Informationen über Arbeiten und kannst Arbeiten direkt im Fenster \"Arbeiten\" starten lassen.' + 'Wenn du deinen Einkauf von hier aus fortsetzt, wird auch die soeben gewählte Aufgabe für das Handwerk automatisch abgeschlossen.', null, null, Crafting.startCraft.bind(this, recipe_id, craft_amount));
@@ -54079,7 +54144,7 @@ ChatWindow.Settings = (function() {
                 if (null !== Crafting.recipes[craftableID].blocktime) {
                     recipeInfo.maxCount = 1;
                 }
-                var amount = new west.gui.Plusminusfield('recipe_button_' + Crafting.recipes[craftableID].item_id,1,1,recipeInfo.maxCount,1,Crafting.buttonLogic,Crafting.buttonLogic,Crafting.wheelLogic);
+                var amount = new west.gui.Plusminusfield('recipe_button_' + Crafting.recipes[craftableID].item_id,1,1,recipeInfo.maxCount,1,Crafting.buttonLogic,Crafting.buttonLogic,Crafting.wheelLogic,Crafting.inputLogic);
                 craftAmountLayer.append(amount.getMainDiv());
                 if (recipeInfo.dependent && !Premium.hasBonus('automation')) {
                     craftRecipeLayer.append('<img src="https://westde.innogamescdn.com/images/premium/automation.png" alt="premium_automation">');
@@ -54107,7 +54172,7 @@ ChatWindow.Settings = (function() {
                 return false;
             butObj.current_value -= 1;
         }
-        $('#' + butObj.id + ' span.displayValue').text(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValue').val(butObj.current_value);
         return true;
     }
     ;
@@ -54126,10 +54191,20 @@ ChatWindow.Settings = (function() {
             }
         }
         button.current_value = newVal;
-        $('#' + button.id + ' span.displayValue').text(button.current_value);
+        $('#' + button.id + ' input.displayValue').val(button.current_value);
         return true;
     }
     ;
+    Crafting.inputLogic = function(e, field) {
+        var newValue = e.currentTarget.value;
+        if (newValue > field.max_value) {
+            newValue = e.currentTarget.value = field.max_value;
+        } else if (newValue < field.min_value) {
+            newValue = e.currentTarget.value = field.min_value;
+        }
+        field.current_value = newValue;
+        return true;
+    }
 }
 )(jQuery);
 ;(function($) {
@@ -54237,8 +54312,7 @@ ChatWindow.Settings = (function() {
         var skillKeys = CharacterSkills.allSkillKeys;
         for (var i = 0; i < skillKeys.length; i++) {
             tmpSk = CharacterSkills.getSkill(skillKeys[i]);
-            SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus,logicPlusMinus,function() {}
-            ).setWidth(80).setData({
+            SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus,logicPlusMinus,null,logicUserInput).setWidth(80).setData({
                 'key': skillKeys[i]
             }).toggleMinus();
         }
@@ -54365,9 +54439,9 @@ ChatWindow.Settings = (function() {
             tmpObj.current_value = points + tmpObj.revision;
             tmpObj.min_value = points;
             tmpObj.extra = bonuspoints;
-            tmpObj.extra > 0 ? $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
-            $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
-            $('#' + tmpObj.id + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
+            tmpObj.extra > 0 ? $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
+            $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
+            $('#' + tmpObj.id + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
         }
         if (SkillsWindow.GUI.hasOwnProperty('sh_pmbut_skill_' + key)) {
             var tmpObjSh = SkillsWindow.GUI['sh_pmbut_skill_' + key];
@@ -54375,9 +54449,9 @@ ChatWindow.Settings = (function() {
             tmpObjSh.current_value = points + tmpObjSh.revision;
             tmpObjSh.max_value = points;
             tmpObjSh.extra = bonuspoints;
-            tmpObjSh.extra > 0 ? $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
-            $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObjSh.current_value + tmpObjSh.extra);
-            $('#' + tmpObjSh.id + ' span.displayValue', SkillsWindow.DOM).text(tmpObjSh.current_value);
+            tmpObjSh.extra > 0 ? $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
+            $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObjSh.current_value + tmpObjSh.extra);
+            $('#' + tmpObjSh.id + ' input.displayValue', SkillsWindow.DOM).val(tmpObjSh.current_value);
         }
     }
     ;
@@ -54388,9 +54462,9 @@ ChatWindow.Settings = (function() {
             tmpObj.current_value = points + tmpObj.revision;
             tmpObj.min_value = points;
             tmpObj.extra = bonuspoints;
-            tmpObj.extra > 0 ? $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
-            $('#' + tmpObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
-            $('#' + tmpObj.id + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
+            tmpObj.extra > 0 ? $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
+            $('#' + tmpObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
+            $('#' + tmpObj.id + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
         }
         if (SkillsWindow.GUI.hasOwnProperty('sh_pmbut_attr_' + key)) {
             var tmpObjSh = SkillsWindow.GUI['sh_pmbut_attr_' + key];
@@ -54398,9 +54472,9 @@ ChatWindow.Settings = (function() {
             tmpObjSh.current_value = points + tmpObjSh.revision;
             tmpObjSh.max_value = points;
             tmpObjSh.extra = bonuspoints;
-            tmpObjSh.extra > 0 ? $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
-            $('#' + tmpObjSh.id + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObjSh.current_value + tmpObjSh.extra);
-            $('#' + tmpObjSh.id + ' span.displayValue', SkillsWindow.DOM).text(tmpObjSh.current_value);
+            tmpObjSh.extra > 0 ? $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_green') : $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_green');
+            $('#' + tmpObjSh.id + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObjSh.current_value + tmpObjSh.extra);
+            $('#' + tmpObjSh.id + ' input.displayValue', SkillsWindow.DOM).val(tmpObjSh.current_value);
         }
     }
     ;
@@ -54468,19 +54542,16 @@ ChatWindow.Settings = (function() {
                 $(this).next().find('span.butPlus').click();
             }));
             if (!SkillsWindow.blockSkills)
-                SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints() + open_skillpoints,tmpSk.getBonus(),logicPlusMinus,logicPlusMinus,function() {}
-                ).setWidth(80).setData({
+                SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints() + open_skillpoints,tmpSk.getBonus(),logicPlusMinus,logicPlusMinus,null,logicUserInput).setWidth(80).setData({
                     'key': skillKeys[i]
                 }).toggleMinus();
             else {
                 if (SkillsWindow.tutorial.hasOwnProperty(skillKeys[i]))
-                    SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus,logicPlusMinus,function() {}
-                    ).setWidth(80).setData({
+                    SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus,logicPlusMinus).setWidth(80).setData({
                         'key': skillKeys[i]
                     }).toggleMinus();
                 else {
                     SkillsWindow.GUI['pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getPoints(),tmpSk.getBonus(),function() {}
-                    ,function() {}
                     ,function() {}
                     ).setWidth(80).setData({
                         'key': skillKeys[i]
@@ -54506,8 +54577,7 @@ ChatWindow.Settings = (function() {
             tmp.prepend(tmpSk.getSkillIcon().click(this, function() {
                 $(this).next().find('span.butMinus').click();
             }));
-            SkillsWindow.GUI['sh_pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('sh_pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),min_points,tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus4Shaman,logicPlusMinus4Shaman,function() {}
-            ).setWidth(80).togglePlus().setData({
+            SkillsWindow.GUI['sh_pmbut_skill_' + skillKeys[i]] = new west.gui.Plusminusfield('sh_pmbut_skill_' + skillKeys[i],tmpSk.getPoints(),min_points,tmpSk.getPoints(),tmpSk.getBonus(),logicPlusMinus4Shaman,logicPlusMinus4Shaman,null,logicUserInputShaman).setWidth(80).togglePlus().setData({
                 'key': skillKeys[i]
             });
             $('div.sks_plusminus', tmp).append(SkillsWindow.GUI['sh_pmbut_skill_' + skillKeys[i]].getMainDiv());
@@ -54518,7 +54588,6 @@ ChatWindow.Settings = (function() {
     var generateAttributePlusMinus = function(attr_type) {
         var tmpAttr = CharacterSkills.getAttribute(attr_type);
         SkillsWindow.GUI['pmbut_attr_' + attr_type] = new west.gui.Plusminusfield('pmbut_attr_' + attr_type,tmpAttr.getPoints(),tmpAttr.getPoints(),tmpAttr.getPoints() + open_attrpoints,tmpAttr.getBonus(),attrLogicPlus,function() {}
-        ,function() {}
         ).setWidth(80).setData({
             'key': attr_type
         }).toggleMinus();
@@ -54528,8 +54597,7 @@ ChatWindow.Settings = (function() {
     };
     var generateAttributePlusMinus4Shaman = function(attr_type) {
         var tmpAttr = CharacterSkills.getAttribute(attr_type);
-        SkillsWindow.GUI['sh_pmbut_attr_' + attr_type] = new west.gui.Plusminusfield('sh_pmbut_attr_' + attr_type,tmpAttr.getPoints(),0,tmpAttr.getPoints(),tmpAttr.getBonus(),null,attrLogicPlus4Shaman,function() {}
-        ).setWidth(80).togglePlus().setData({
+        SkillsWindow.GUI['sh_pmbut_attr_' + attr_type] = new west.gui.Plusminusfield('sh_pmbut_attr_' + attr_type,tmpAttr.getPoints(),0,tmpAttr.getPoints(),tmpAttr.getBonus(),null,attrLogicPlus4Shaman).setWidth(80).togglePlus().setData({
             'key': attr_type
         });
         return SkillsWindow.GUI['sh_pmbut_attr_' + attr_type].getMainDiv().data('key', attr_type);
@@ -54678,7 +54746,7 @@ ChatWindow.Settings = (function() {
             butObj.current_value += 1;
             butObj.revision++;
             skill_modifications[butObj.data['key']] = (skill_modifications[butObj.data['key']] || 0) + 1;
-            $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+            $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
             open_skillpoints--;
             assigned_skillpoints++;
         } else {
@@ -54688,15 +54756,51 @@ ChatWindow.Settings = (function() {
             butObj.revision--;
             skill_modifications[butObj.data['key']] -= 1;
             if (butObj.current_value == butObj.min_value)
-                $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+                $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
             open_skillpoints++;
             assigned_skillpoints--;
         }
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showSkillingEffect($(event.currentTarget));
         butObj.max_value = open_skillpoints + butObj.current_value;
         $('#spe_open_skill_points', SkillsWindow.DOM).text(open_skillpoints);
+        return true;
+    };
+    const logicUserInput = function(e, field) {
+        var newValue = e.currentTarget.value;
+        if (e.currentTarget.classList.contains('displayValueBonus')) {
+            newValue -= field.extra;
+        }
+        var delta = newValue - field.current_value;
+        if (delta > open_skillpoints) {
+            delta = open_skillpoints;
+            newValue = field.current_value + delta;
+        } else if (field.current_value + delta < field.min_value) {
+            delta = field.min_value - field.current_value;
+            newValue = field.min_value;
+        }
+        if (delta !== 0) {
+            field.revision += delta;
+            field.current_value = newValue;
+            skill_modifications[field.data['key']] = (skill_modifications[field.data['key']] || 0) + delta;
+            open_skillpoints -= delta;
+            assigned_skillpoints += delta;
+            if (field.current_value !== field.min_value) {
+                $('#' + field.id + ' input.displayValue, #' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+            } else {
+                $('#' + field.id + ' input.displayValue, #' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+            }
+            $('#' + field.id + ' input.displayValue', SkillsWindow.DOM).val(field.current_value);
+            $('#' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).val(field.current_value + field.extra);
+            showSkillingEffect($(e.currentTarget));
+            field.max_value = open_skillpoints + field.current_value;
+            $('#spe_open_skill_points', SkillsWindow.DOM).text(open_skillpoints);
+        } else if (e.currentTarget.classList.contains('displayValueBonus')) {
+            e.currentTarget.value = field.current_value + field.extra;
+        } else {
+            e.currentTarget.value = field.current_value;
+        }
         return true;
     };
     var attrLogicPlus = function(event) {
@@ -54709,20 +54813,20 @@ ChatWindow.Settings = (function() {
         butObj.current_value += 1;
         butObj.revision++;
         attribute_modifications[butObj.data['key']] = (attribute_modifications[butObj.data['key']] || 0) + 1;
-        $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+        $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
         open_attrpoints--;
         assigned_attrpoints++;
         $.each(SkillsWindow.Attributes[butObj.id], function(k, v) {
             tmpObj = SkillsWindow.GUI[v];
             tmpObj.current_value += 1;
             tmpObj.revision++;
-            tmpObj.min_value += 1;
-            tmpObj.max_value += 1;
-            $('#' + v + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
-            $('#' + v + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
+            tmpObj.setMin(tmpObj.min_value + 1);
+            tmpObj.setMax(tmpObj.max_value + 1);
+            $('#' + v + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
+            $('#' + v + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
         });
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showAttrEffect(attrType);
         butObj.max_value = open_attrpoints + butObj.current_value;
         $('#spe_open_attr_points', SkillsWindow.DOM).text(open_attrpoints);
@@ -54739,20 +54843,20 @@ ChatWindow.Settings = (function() {
         butObj.revision--;
         attribute_modifications[butObj.data['key']] -= 1;
         if (butObj.current_value == butObj.min_value)
-            $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+            $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
         open_attrpoints++;
         assigned_attrpoints--;
         $.each(SkillsWindow.Attributes[butObj.id], function(k, v) {
             tmpObj = SkillsWindow.GUI[v];
             tmpObj.current_value -= 1;
             tmpObj.revision--;
-            tmpObj.min_value -= 1;
-            tmpObj.max_value -= 1;
-            $('#' + v + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
-            $('#' + v + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
+            tmpObj.setMin(tmpObj.min_value - 1);
+            tmpObj.setMax(tmpObj.max_value - 1);
+            $('#' + v + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
+            $('#' + v + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
         });
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showAttrEffect(attrType);
         butObj.max_value = open_attrpoints + butObj.current_value;
         $('#spe_open_attr_points', SkillsWindow.DOM).text(open_attrpoints);
@@ -54766,27 +54870,63 @@ ChatWindow.Settings = (function() {
             butObj.current_value -= 1;
             butObj.revision--;
             skill_modifications4Shaman[butObj.data['key']] = (skill_modifications4Shaman[butObj.data['key']] || 0) - 1;
-            $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+            $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
             reskill_skillpoints++;
-            Shaman.updateSkillPrice();
+            Shaman.updateSkillPrice(1);
         } else {
             if (butObj.current_value + 1 > butObj.max_value)
                 return false;
             butObj.current_value += 1;
             butObj.revision++;
             skill_modifications4Shaman[butObj.data['key']] += 1;
-            $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-            $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+            $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+            $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
             if (butObj.current_value == butObj.max_value)
-                $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+                $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
             reskill_skillpoints--;
-            Shaman.updateSkillPrice(true);
+            Shaman.updateSkillPrice(-1);
         }
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showSkillingEffect($(event.currentTarget));
         $('#sps_open_skill_points', SkillsWindow.DOM).text(open_skillpoints + reskill_skillpoints);
         updateShamanHeader('skill');
+        return true;
+    };
+    const logicUserInputShaman = function(e, field) {
+        var newValue = e.currentTarget.value;
+        if (e.currentTarget.classList.contains('displayValueBonus')) {
+            newValue -= field.extra;
+        }
+        var delta = newValue - field.current_value;
+        if (field.current_value + delta > field.max_value) {
+            delta = field.max_value - field.current_value;
+            newValue = field.max_value;
+        } else if (field.current_value + delta < field.min_value) {
+            delta = field.min_value - field.current_value;
+            newValue = field.min_value;
+        }
+        if (delta !== 0) {
+            field.revision += delta;
+            field.current_value = newValue;
+            skill_modifications4Shaman[field.data['key']] = (skill_modifications4Shaman[field.data['key']] || 0) + delta;
+            reskill_skillpoints -= delta;
+            if (field.current_value !== field.max_value) {
+                $('#' + field.id + ' input.displayValue, #' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+            } else {
+                $('#' + field.id + ' input.displayValue, #' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+            }
+            $('#' + field.id + ' input.displayValue', SkillsWindow.DOM).val(field.current_value);
+            $('#' + field.id + ' input.displayValueBonus', SkillsWindow.DOM).val(field.current_value + field.extra);
+            Shaman.updateSkillPrice(-delta);
+            showSkillingEffect($(e.currentTarget));
+            $('#sps_open_skill_points', SkillsWindow.DOM).text(open_skillpoints + reskill_skillpoints);
+            updateShamanHeader('skill');
+        } else if (e.currentTarget.classList.contains('displayValueBonus')) {
+            e.currentTarget.value = field.current_value + field.extra;
+        } else {
+            e.currentTarget.value = field.current_value;
+        }
         return true;
     };
     var attrLogicPlus4Shaman = function(event) {
@@ -54801,19 +54941,19 @@ ChatWindow.Settings = (function() {
         attribute_modifications4Shaman[butObj.data['key']] += 1;
         reskill_attrpoints--;
         if (butObj.current_value == butObj.max_value)
-            $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
+            $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).removeClass('text_gold');
         $.each(SkillsWindow.Attributes[butObj.id.replace('sh_', '')], function(k, v) {
             tmpObj = SkillsWindow.GUI['sh_' + v];
             tmpObj.current_value += 1;
             tmpObj.revision++;
-            tmpObj.min_value += 1;
-            tmpObj.max_value += 1;
-            $('#sh_' + v + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
-            $('#sh_' + v + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
+            tmpObj.setMin(tmpObj.min_value + 1);
+            tmpObj.setMax(tmpObj.max_value + 1);
+            $('#sh_' + v + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
+            $('#sh_' + v + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
         });
         Shaman.updateAttributePrice(true);
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showAttrEffect(attrType);
         $('#sps_open_attr_points', SkillsWindow.DOM).text(open_attrpoints + reskill_attrpoints);
         updateShamanHeader('attr');
@@ -54829,20 +54969,20 @@ ChatWindow.Settings = (function() {
         butObj.current_value -= 1;
         butObj.revision--;
         attribute_modifications4Shaman[butObj.data['key']] = (attribute_modifications4Shaman[butObj.data['key']] || 0) - 1;
-        $('#' + butObj.id + ' span.displayValue, #' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
+        $('#' + butObj.id + ' input.displayValue, #' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).addClass('text_gold');
         reskill_attrpoints++;
         $.each(SkillsWindow.Attributes[butObj.id.replace('sh_', '')], function(k, v) {
             tmpObj = SkillsWindow.GUI['sh_' + v];
             tmpObj.current_value -= 1;
             tmpObj.revision--;
-            tmpObj.min_value -= 1;
-            tmpObj.max_value -= 1;
-            $('#sh_' + v + ' span.displayValue', SkillsWindow.DOM).text(tmpObj.current_value);
-            $('#sh_' + v + ' span.displayValueBonus', SkillsWindow.DOM).text(tmpObj.current_value + tmpObj.extra);
+            tmpObj.setMin(tmpObj.min_value - 1);
+            tmpObj.setMax(tmpObj.max_value - 1);
+            $('#sh_' + v + ' input.displayValue', SkillsWindow.DOM).val(tmpObj.current_value);
+            $('#sh_' + v + ' input.displayValueBonus', SkillsWindow.DOM).val(tmpObj.current_value + tmpObj.extra);
         });
         Shaman.updateAttributePrice();
-        $('#' + butObj.id + ' span.displayValue', SkillsWindow.DOM).text(butObj.current_value);
-        $('#' + butObj.id + ' span.displayValueBonus', SkillsWindow.DOM).text(butObj.current_value + butObj.extra);
+        $('#' + butObj.id + ' input.displayValue', SkillsWindow.DOM).val(butObj.current_value);
+        $('#' + butObj.id + ' input.displayValueBonus', SkillsWindow.DOM).val(butObj.current_value + butObj.extra);
         showAttrEffect(attrType);
         $('#sps_open_attr_points', SkillsWindow.DOM).text(open_attrpoints + reskill_attrpoints);
         updateShamanHeader('attr');
@@ -54850,20 +54990,20 @@ ChatWindow.Settings = (function() {
     };
     var showBonusCheckboxUsed = function() {
         if ($('#ske_showItemBonus', SkillsWindow.DOM).hasClass('tw2gui_checkbox_checked')) {
-            $('div.skills_content span.displayValue', SkillsWindow.DOM).hide();
-            $('div.skills_content span.displayValueBonus', SkillsWindow.DOM).css('display', 'inline-block');
+            $('div.skills_content input.displayValue', SkillsWindow.DOM).hide();
+            $('div.skills_content input.displayValueBonus', SkillsWindow.DOM).css('display', 'inline-block');
         } else {
-            $('div.skills_content span.displayValueBonus', SkillsWindow.DOM).hide();
-            $('div.skills_content span.displayValue', SkillsWindow.DOM).css('display', 'inline-block');
+            $('div.skills_content input.displayValueBonus', SkillsWindow.DOM).hide();
+            $('div.skills_content input.displayValue', SkillsWindow.DOM).css('display', 'inline-block');
         }
     };
     var showBonusCheckbox4ShamanUsed = function() {
         if ($('#sks_showItemBonus', SkillsWindow.DOM).hasClass('tw2gui_checkbox_checked')) {
-            $('div.skills_content4Shaman span.displayValue', SkillsWindow.DOM).hide();
-            $('div.skills_content4Shaman span.displayValueBonus', SkillsWindow.DOM).css('display', 'inline-block');
+            $('div.skills_content4Shaman input.displayValue', SkillsWindow.DOM).hide();
+            $('div.skills_content4Shaman input.displayValueBonus', SkillsWindow.DOM).css('display', 'inline-block');
         } else {
-            $('div.skills_content4Shaman span.displayValueBonus', SkillsWindow.DOM).hide();
-            $('div.skills_content4Shaman span.displayValue', SkillsWindow.DOM).css('display', 'inline-block');
+            $('div.skills_content4Shaman input.displayValueBonus', SkillsWindow.DOM).hide();
+            $('div.skills_content4Shaman input.displayValue', SkillsWindow.DOM).css('display', 'inline-block');
         }
     };
 }
@@ -56174,7 +56314,7 @@ $(function($) {
     }
     ;
     wman.registerReloadHandler(/^marketplace/, function() {
-        MarketWindow.open(this.townId, this.currentStage, this.townName);
+        MarketWindow.open(MarketWindow.townId, MarketWindow.currentStage, MarketWindow.townName);
     });
     MarketWindow.showTab = function(id) {
         if (!MarketWindow.window)
@@ -71921,6 +72061,7 @@ window.mpi_translations = {
     "6349e60b66YouFireABull_yUnits": ["Du schießt eine Kugel auf dein Ziel und verursachst normalen Schaden. Kann eigene Teammitglieder treffen."],
     "28a52d902bYouFireTwoSh_Weapon": ["Du feuerst zwei Schüsse, die individuell berechnet werden und jeweils %d% Schaden deiner normalen Waffe verursachen."],
     "c22c6df802YouHaveAdCha_otMove": ["Du hast eine %d% Chance das Ziel für %d Runden festzuhalten. Ein festgehaltenes Ziel kann sich nicht bewegen."],
+    "90a8d513daYouHaveAlrea_Player": ["Du hast bereits %d Einladung zu diesem Abenteuer gesendet. Das ist die maximal erlaubte Menge pro Lobby pro Spieler.", "Du hast bereits %d Einladungen zu diesem Abenteuer gesendet. Das ist die maximal zulässige Menge pro Lobby und Spieler."],
     "a52b2f91b6YouHaveToLea_eAGang": ["Du musst zuerst die Warteschlange verlassen, bevor du eine Bande gründen kannst."],
     "28377fee32YouHaveToLea_omGame": ["Du musst die Warteschlange erst verlassen, bevor du einem freien Spiel beitreten kannst."],
     "ce2d1a53c5YouHaveToLea_nAGang": ["Du musst zuerst die Warteschlange verlassen, bevor du einer Bande beitreten kannst."],
